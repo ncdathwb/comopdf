@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kiểm tra PDF bị tách chữ</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --paper: #f6f7f5;
+    --surface: #ffffff;
+    --ink: #18232b;
+    --muted: #5d6b73;
+    --line: #dbe1de;
+    --accent: #0e4f55;
+    --accent-soft: #0e4f5510;
+    --danger: #a3231b;
+    --danger-soft: #a3231b12;
+    --warn: #7a5200;
+    --warn-soft: #7a520010;
+    --ok: #1f603c;
+    --mono: "Cascadia Mono", Consolas, "Courier New", monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--paper); }
+  body {
+    margin: 0;
+    color: var(--ink);
+    font: 15px/1.55 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  .head { border-bottom: 1px solid var(--line); padding-bottom: 22px; }
+  h1 {
+    margin: 0 0 10px;
+    font-size: clamp(24px, 3.4vw, 30px);
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    line-height: 1.15;
+  }
+  .lede { margin: 0; max-width: 70ch; color: var(--muted); text-wrap: pretty; }
+
+  /* --- chọn file --- */
+  .drops { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 26px 0 6px; }
+  .drop {
+    position: relative;
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop-title { font-weight: 600; font-size: 14px; }
+  .drop-title em { font-style: normal; font-weight: 400; color: var(--muted); }
+  .drop input[type="file"] {
+    position: absolute;
+    width: 1px; height: 1px;
+    opacity: 0;
+    clip-path: inset(50%);
+  }
+  .drop:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pick {
+    font-size: 13px; font-weight: 600;
+    padding: 6px 12px;
+    color: var(--accent);
+    background: var(--surface);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+  }
+  .drop:hover .pick, .drop.over .pick { background: var(--accent-soft); }
+  .drop-name {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    word-break: break-all;
+  }
+  .drop.has-file .drop-name { color: var(--ink); }
+
+  /* --- tùy chọn --- */
+  .options { margin: 18px 0 0; font-size: 14px; }
+  .options summary {
+    cursor: pointer; color: var(--accent); font-weight: 600;
+    width: fit-content; padding: 4px 0;
+  }
+  .options summary:hover { text-decoration: underline; }
+  .opt-grid { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0 4px; }
+  .opt-grid label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
+  #pattern, #minlen {
+    font-family: var(--mono); font-size: 13px;
+    padding: 8px 10px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+  }
+  #pattern { width: min(560px, 80vw); }
+  #minlen { width: 90px; }
+  .hint { margin: 6px 0 0; font-size: 12.5px; color: var(--muted); max-width: 78ch; }
+  .hint code { font-family: var(--mono); font-size: 12px; color: var(--ink); word-break: break-all; }
+
+  /* --- hành động --- */
+  .actions { display: flex; align-items: center; gap: 16px; margin: 26px 0 0; flex-wrap: wrap; }
+  button.primary {
+    font: inherit; font-weight: 600; font-size: 15px;
+    padding: 11px 28px;
+    color: #fff;
+    background: var(--accent);
+    border: 0; border-radius: 8px;
+    cursor: pointer;
+  }
+  button.primary:hover:not(:disabled) { background: #0a3f44; }
+  button.primary:disabled { opacity: .4; cursor: not-allowed; }
+  .status { font-size: 13.5px; color: var(--muted); }
+  .status.err { color: var(--danger); font-weight: 600; }
+
+  /* --- kết quả --- */
+  #results { margin-top: 34px; }
+  .metrics { display: flex; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 18px; row-gap: 12px; }
+  .metric { padding-right: 34px; margin-right: 34px; border-right: 1px solid var(--line); }
+  .metric:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
+  .metric .num { display: block; font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1.1; }
+  .metric .lbl { font-size: 13px; color: var(--muted); }
+  .metric.alert .num { color: var(--danger); }
+
+  .note {
+    margin-top: 18px; padding: 12px 14px;
+    font-size: 13.5px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    color: var(--muted);
+  }
+  .note.ok { border-left-color: var(--ok); color: var(--ok); }
+  .note.warn { border-left-color: var(--warn); color: var(--warn); background: #fffdf7; }
+
+  .finding { border-top: 1px solid var(--line); padding: 20px 0 24px; margin-top: 22px; }
+  .finding:first-of-type { margin-top: 26px; }
+  .finding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+  .finding-page { font-size: 13px; color: var(--muted); min-width: 62px; }
+  .finding-code { font-family: var(--mono); font-size: 21px; font-weight: 600; letter-spacing: .01em; }
+  .badge {
+    font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px;
+    background: var(--danger-soft); color: var(--danger);
+  }
+  .badge.both { background: var(--warn-soft); color: var(--warn); }
+  .finding-status { font-size: 13px; color: var(--muted); }
+  .finding-note { margin: 4px 0 0; font-size: 12.5px; color: var(--warn); }
+
+  .shots { display: flex; flex-wrap: wrap; gap: 12px 24px; margin-top: 14px; }
+  .shots figure { margin: 0; max-width: 100%; }
+  .shots figcaption { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .shots canvas {
+    display: block;
+    max-width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 720px) {
+    main { padding: 28px 16px 60px; }
+    .drops { grid-template-columns: 1fr; }
+    .metric { padding-right: 20px; margin-right: 20px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header class="head">
+    <h1>Kiểm tra PDF bị tách chữ</h1>
+    <p class="lede">Quét lớp text của PDF xem mã hàng có bị nén tách thành nhiều lệnh vẽ — nguyên nhân làm link box trên WEB catalog bị chia. File chỉ xử lý trong bộ nhớ trình duyệt.</p>
+  </header>
+
+  <section class="drops">
+    <label class="drop" id="drop-comp">
+      <span class="drop-title">PDF cần kiểm tra <em>(bắt buộc)</em></span>
+      <input type="file" id="file-comp" accept="application/pdf,.pdf">
+      <span class="drop-row">
+        <span class="pick">Chọn file</span>
+        <span class="drop-name" id="name-comp">hoặc kéo file vào đây</span>
+      </span>
+    </label>
+    <label class="drop" id="drop-orig">
+      <span class="drop-title">PDF bản gốc <em>(không bắt buộc)</em></span>
+      <input type="file" id="file-orig" accept="application/pdf,.pdf">
+      <span class="drop-row">
+        <span class="pick">Chọn file</span>
+        <span class="drop-name" id="name-orig">để đối chiếu, biết chắc do nén</span>
+      </span>
+    </label>
+  </section>
+
+  <details class="options">
+    <summary>Tùy chọn nâng cao</summary>
+    <div class="opt-grid">
+      <label>Mẫu nhận diện (regex)
+        <input id="pattern" type="text" value="(?<![0-9０-９])[0-9０-９]{6}(?![0-9０-９])" spellcheck="false" autocomplete="off">
+      </label>
+      <label>Độ dài tối thiểu
+        <input id="minlen" type="number" value="6" min="0" max="20">
+      </label>
+    </div>
+    <p class="hint">Mặc định bắt mã đúng 6 chữ số (cả số 半角 lẫn 全角), kể cả khi dính chữ khác (227340円, ¥227340, No.227340), và không bắt nhầm 6 số nằm trong dãy dài hơn (JAN 13 số, số điện thoại). Muốn bắt mọi dãy từ 5 số: <code>(?&lt;![0-9])[0-9]{5,}(?![0-9])</code></p>
+  </details>
+
+  <div class="actions">
+    <button class="primary" id="scan" disabled>Quét</button>
+    <span class="status" id="status" role="status" aria-live="polite"></span>
+  </div>
+
+  <section id="results" hidden></section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        integrity="sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e"
+        crossorigin="anonymous"></script>
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const PDFJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
+
+/* Không tải được pdf.js (CDN bị chặn / sai integrity) → báo rõ, không chết im lặng */
+if (!window.pdfjsLib) {
+  const s = $("status");
+  s.className = "status err";
+  s.textContent = "Lỗi: không tải được thư viện pdf.js (mạng chặn cdnjs.cloudflare.com?). Hãy thử mạng khác.";
+  throw new Error("pdfjsLib missing");
+}
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "pdf.worker.min.js";
+
+const OPS = pdfjsLib.OPS;
+const I = [1, 0, 0, 1, 0, 0];
+const MAX_SHOTS = 40;
+const STATUS = {
+  SPLIT:      { label: "BỊ TÁCH do nén",     cls: "split" },
+  SUSPECT:    { label: "Nghi bị tách",       cls: "split" },
+  SPLIT_BOTH: { label: "Tách cả ở bản gốc",  cls: "both"  },
+};
+
+let compFile = null;
+let origFile = null;
+let running = false;
+
+function refreshButton() {
+  $("scan").disabled = !compFile || running;
+}
+
+/* ---------- chọn file ---------- */
+function wireDrop(inputId, nameId, dropId, placeholder, onPick) {
+  const input = $(inputId);
+  const name = $(nameId);
+  const drop = $(dropId);
+  const show = (f) => {
+    if (running) return;                       // không đổi file khi đang quét
+    onPick(f);
+    name.textContent = f ? f.name : placeholder;
+    drop.classList.toggle("has-file", !!f);
+    refreshButton();
+  };
+  input.addEventListener("change", () => show(input.files[0] || null));
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", (e) => {
+    if (!drop.contains(e.relatedTarget)) drop.classList.remove("over");
+  });
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    if (f.type === "application/pdf" || /\.pdf$/i.test(f.name)) show(f);
+  });
+}
+wireDrop("file-comp", "name-comp", "drop-comp", "hoặc kéo file vào đây", (f) => { compFile = f; });
+wireDrop("file-orig", "name-orig", "drop-orig", "để đối chiếu, biết chắc do nén", (f) => { origFile = f; });
+
+/* ---------- toán ma trận (PDF, vector hàng) ---------- */
+function mul(m1, m2) {
+  const [a1, b1, c1, d1, e1, f1] = m1;
+  const [a2, b2, c2, d2, e2, f2] = m2;
+  return [
+    a1 * a2 + b1 * c2, a1 * b2 + b1 * d2,
+    c1 * a2 + d1 * c2, c1 * b2 + d1 * d2,
+    e1 * a2 + f1 * c2 + e2, e1 * b2 + f1 * d2 + f2,
+  ];
+}
+const applyM = (px, py, m) => [m[0] * px + m[2] * py + m[4], m[1] * px + m[3] * py + m[5]];
+const translate = (m, tx, ty) =>
+  [m[0], m[1], m[2], m[3], m[4] + tx * m[0] + ty * m[2], m[5] + tx * m[1] + ty * m[3]];
+
+/* Điểm bắt đầu của mỗi lệnh vẽ chữ (PDF user space, y hướng lên).
+   Sau mỗi lệnh, ma trận chữ được dời theo bề rộng glyph, nên
+   "(価格 2) Tj (27340) Tj" cho điểm thứ 2 nằm đúng giữa "227340".
+   Giới hạn: giả định font matrix chuẩn 0.001 (Type3 và chữ dọc có thể lệch). */
+function textOpPoints(opList) {
+  const pts = [];
+  let st = { ctm: I, fontSize: 0, charSp: 0, wordSp: 0, hScale: 1, leading: 0 };
+  let tm = I, tlm = I;
+  let inAnnot = 0;
+  const stack = [];
+  const fn = opList.fnArray, args = opList.argsArray;
+
+  for (let i = 0; i < fn.length; i++) {
+    const a = args[i];
+    switch (fn[i]) {
+      case OPS.beginAnnotation: inAnnot++; break;
+      case OPS.endAnnotation: if (inAnnot) inAnnot--; break;
+      case OPS.save: stack.push({ ...st }); break;
+      case OPS.restore: if (stack.length) st = stack.pop(); break;
+      case OPS.transform: st.ctm = mul(a.slice(0, 6), st.ctm); break;
+      case OPS.paintFormXObjectBegin:
+        stack.push({ ...st });
+        if (a && Array.isArray(a[0])) st.ctm = mul(a[0], st.ctm);
+        break;
+      case OPS.paintFormXObjectEnd:
+        if (stack.length) st = stack.pop();
+        break;
+
+      case OPS.setFont: st.fontSize = (a && typeof a[1] === "number") ? a[1] : st.fontSize; break;
+      case OPS.setCharSpacing: st.charSp = a[0]; break;
+      case OPS.setWordSpacing: st.wordSp = a[0]; break;
+      case OPS.setHScale: st.hScale = a[0] / 100; break;
+      case OPS.setLeading: st.leading = a[0]; break;
+
+      case OPS.beginText: tm = I; tlm = I; break;
+      case OPS.setTextMatrix: tm = a.slice(0, 6); tlm = tm; break;
+      case OPS.moveText: tlm = translate(tlm, a[0], a[1]); tm = tlm; break;
+      case OPS.setLeadingMoveText:
+        st.leading = -a[1];
+        tlm = translate(tlm, a[0], a[1]); tm = tlm;
+        break;
+      case OPS.nextLine: tlm = translate(tlm, 0, -st.leading); tm = tlm; break;
+
+      case OPS.showText:
+      case OPS.showSpacedText: {
+        if (!inAnnot) pts.push(applyM(tm[4], tm[5], st.ctm));
+        const glyphs = a && Array.isArray(a[0]) ? a[0] : [];
+        let tx = 0;
+        for (const g of glyphs) {
+          if (typeof g === "number") { tx -= g * st.fontSize / 1000; continue; } // khoảng TJ
+          if (!g) continue;
+          tx += (g.width || 0) * st.fontSize / 1000 + st.charSp + (g.isSpace ? st.wordSp : 0);
+        }
+        tm = translate(tm, tx * st.hScale, 0);
+        break;
+      }
+    }
+  }
+  return pts;
+}
+
+/* ---------- text item -> "từ" (gộp mảnh liền kề, theo từng dòng) ---------- */
+function collectWords(textContent) {
+  const items = [];
+  for (const it of textContent.items) {
+    if (typeof it.str !== "string" || !it.str.trim()) continue;
+    const t = it.transform;
+    const h = Math.hypot(t[2], t[3]) || 12;
+    items.push({ str: it.str, x0: t[4], y0: t[5], x1: t[4] + (it.width || 0), h });
+  }
+
+  // Gom dòng: sắp theo y giảm dần, item nào gần baseline của dòng hiện tại thì vào dòng đó
+  items.sort((a, b) => b.y0 - a.y0);
+  const lines = [];
+  for (const it of items) {
+    const line = lines[lines.length - 1];
+    if (line && Math.abs(line.y - it.y0) < 0.4 * Math.min(line.h, it.h)) {
+      line.items.push(it);
+    } else {
+      lines.push({ y: it.y0, h: it.h, items: [it] });
+    }
+  }
+
+  const words = [];
+  for (const line of lines) {
+    line.items.sort((a, b) => a.x0 - b.x0);
+    let cur = null;
+    for (const it of line.items) {
+      if (cur &&
+          it.x0 - cur.x1 > -0.5 &&
+          it.x0 - cur.x1 < 0.15 * it.h) {
+        cur.str += it.str;
+        cur.x1 = Math.max(cur.x1, it.x1);
+      } else {
+        cur = { ...it };
+        words.push(cur);
+      }
+    }
+  }
+  return words;
+}
+
+/* ---------- quét một tài liệu ---------- */
+async function scanDoc(doc, rx, minLen, onProgress) {
+  const pages = [];
+  for (let pno = 1; pno <= doc.numPages; pno++) {
+    onProgress(pno, doc.numPages);
+    const page = await doc.getPage(pno);
+    const [opList, textContent] = await Promise.all([
+      page.getOperatorList(),
+      page.getTextContent(),
+    ]);
+    const pts = textOpPoints(opList);
+    const words = collectWords(textContent);
+    const tokens = [];
+
+    for (const w of words) {
+      const str = w.str;
+      const n = str.length || 1;
+      rx.lastIndex = 0;
+      let m;
+      while ((m = rx.exec(str)) !== null) {
+        const tok = m[0];
+        if (!tok) { rx.lastIndex++; continue; }
+        if (tok.trim().length >= minLen) {
+          const x0 = w.x0 + (w.x1 - w.x0) * m.index / n;
+          const x1 = w.x0 + (w.x1 - w.x0) * (m.index + tok.length) / n;
+          const rect = { x0, y0: w.y0, x1, y1: w.y0 + w.h };
+
+          // Đếm điểm bắt đầu lệnh vẽ nằm GIỮA mã (không tính đúng chữ đầu)
+          const cw = (x1 - x0) / tok.length;
+          const tol = 0.5 * cw;
+          let cuts = 0;
+          for (const [px, py] of pts) {
+            if (Math.abs(py - w.y0) < 0.3 * w.h &&
+                px > x0 + tol && px < x1 - tol) cuts++;
+          }
+          tokens.push({ text: tok.trim(), rect, nOps: cuts + 1 });
+        }
+        if (rx.lastIndex === m.index) rx.lastIndex++;
+      }
+    }
+    pages.push({ page: pno, hasText: words.length > 0, tokens });
+    page.cleanup();
+  }
+  return pages;
+}
+
+function iou(a, b) {
+  const x0 = Math.max(a.x0, b.x0), y0 = Math.max(a.y0, b.y0);
+  const x1 = Math.min(a.x1, b.x1), y1 = Math.min(a.y1, b.y1);
+  if (x1 <= x0 || y1 <= y0) return 0;
+  const inter = (x1 - x0) * (y1 - y0);
+  const area = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - inter;
+  return area > 0 ? inter / area : 0;
+}
+
+function classify(compPages, origPages) {
+  const flagged = [];
+  for (const cp of compPages) {
+    const op = origPages ? origPages.find((p) => p.page === cp.page) : null;
+    for (const t of cp.tokens) {
+      if (t.nOps <= 1) continue;
+      const base = { ...t, page: cp.page };
+      if (!origPages) { flagged.push({ ...base, status: "SUSPECT" }); continue; }
+      const cands = (op ? op.tokens : []).filter((o) => o.text === t.text);
+      if (!cands.length) {
+        flagged.push({ ...base, status: "SUSPECT", note: "không thấy chuỗi này ở bản gốc (cùng trang)" });
+        continue;
+      }
+      let best = cands[0], score = -1;
+      for (const c of cands) {
+        const v = iou(c.rect, t.rect);
+        if (v > score) { score = v; best = c; }
+      }
+      flagged.push({
+        ...base,
+        status: best.nOps <= 1 ? "SPLIT" : "SPLIT_BOTH",
+        origRect: best.rect,
+        origPage: cp.page,
+      });
+    }
+  }
+  return flagged;
+}
+
+/* ---------- render & crop (mỗi tài liệu chỉ giữ 1 trang trong bộ nhớ) ---------- */
+async function renderPage(doc, pno, cache, key) {
+  const id = key + ":" + pno;
+  if (cache.has(id)) return cache.get(id);
+  for (const k of [...cache.keys()]) {
+    if (k.startsWith(key + ":")) {
+      cache.get(k).canvas.width = 0;           // giải phóng bộ nhớ canvas
+      cache.delete(k);
+    }
+  }
+  const page = await doc.getPage(pno);
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(2.5, Math.sqrt(12e6 / (base.width * base.height)));
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+  const entry = { canvas, viewport };
+  cache.set(id, entry);
+  return entry;
+}
+
+async function cropFrom(doc, pno, rect, cache, key) {
+  const { canvas: full, viewport } = await renderPage(doc, pno, cache, key);
+  // convertToViewportRectangle không chuẩn hoá thứ tự: đỉnh/đáy có thể ngược nhau
+  const [ax, ay, bx, by] = viewport.convertToViewportRectangle(
+    [rect.x0, rect.y0, rect.x1, rect.y1]
+  );
+  const pad = 10;
+  const sx = Math.max(0, Math.floor(Math.min(ax, bx) - pad));
+  const sy = Math.max(0, Math.floor(Math.min(ay, by) - pad));
+  const ex = Math.min(full.width, Math.ceil(Math.max(ax, bx) + pad));
+  const ey = Math.min(full.height, Math.ceil(Math.max(ay, by) + pad));
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, ex - sx);
+  out.height = Math.max(1, ey - sy);
+  out.getContext("2d").drawImage(full, sx, sy, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+/* ---------- UI kết quả ---------- */
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+function metric(num, label, alert) {
+  const m = el("div", "metric" + (alert ? " alert" : ""));
+  m.append(el("span", "num", String(num)), el("span", "lbl", label));
+  return m;
+}
+
+async function showResults(docC, docO, comp, flagged, status) {
+  const box = $("results");
+  box.replaceChildren();
+  box.hidden = false;
+
+  const total = comp.reduce((s, p) => s + p.tokens.length, 0);
+  const metrics = el("div", "metrics");
+  metrics.append(
+    metric(comp.length, "Số trang"),
+    metric(total, "Chuỗi đã quét"),
+    metric(flagged.length, "Chuỗi đáng ngờ", flagged.length > 0)
+  );
+  box.append(metrics);
+
+  for (const p of comp) {
+    if (!p.hasText) {
+      box.append(el("div", "note warn",
+        `Trang ${p.page}: không có text (chữ đã thành đường/ảnh), không kiểm tra được bằng cách này.`));
+    }
+  }
+
+  if (!flagged.length) {
+    box.append(el("div", "note ok",
+      total ? "Không phát hiện chuỗi nào bị tách."
+            : "Không tìm thấy chuỗi nào khớp mẫu — kiểm tra lại mẫu regex hoặc PDF có lớp text không."));
+    return;
+  }
+  if (!docO) {
+    box.append(el("div", "note",
+      "Chưa có bản gốc nên kết quả chỉ là “nghi ngờ”. Một số chuỗi có thể được thiết kế sẵn thành nhiều khung text."));
+  }
+
+  const cache = new Map();
+  const shown = flagged.slice(0, MAX_SHOTS);
+  let drawn = 0;
+  for (const t of shown) {
+    status.textContent = `Đang vẽ ảnh ${++drawn}/${shown.length}…`;
+    const row = el("div", "finding");
+    const head = el("div", "finding-head");
+    head.append(
+      el("span", "finding-page", `Trang ${t.page}`),
+      el("code", "finding-code", t.text),
+      el("span", "badge " + STATUS[t.status].cls, `${t.nOps} mảnh`),
+      el("span", "finding-status", STATUS[t.status].label)
+    );
+    row.append(head);
+    if (t.note) row.append(el("p", "finding-note", t.note));
+
+    const shots = el("div", "shots");
+    const figC = el("figure");
+    figC.append(el("figcaption", null, "Bản nén"));
+    try {
+      figC.append(await cropFrom(docC, t.page, t.rect, cache, "comp"));
+    } catch (e) {
+      figC.append(el("div", "finding-note", "Không vẽ được ảnh."));
+    }
+    shots.append(figC);
+
+    if (docO && t.origRect) {
+      const figO = el("figure");
+      figO.append(el("figcaption", null, "Bản gốc (cùng vị trí)"));
+      try {
+        figO.append(await cropFrom(docO, t.origPage, t.origRect, cache, "orig"));
+      } catch (e) {
+        figO.append(el("div", "finding-note", "Không vẽ được ảnh."));
+      }
+      shots.append(figO);
+    }
+    row.append(shots);
+    box.append(row);
+  }
+
+  for (const v of cache.values()) v.canvas.width = 0;
+  cache.clear();
+
+  if (flagged.length > MAX_SHOTS) {
+    const rest = flagged.slice(MAX_SHOTS)
+      .map((t) => `Trang ${t.page}: ${t.text}`)
+      .join(" · ");
+    box.append(el("div", "note",
+      `Chỉ hiển thị ảnh ${MAX_SHOTS} chuỗi đầu. Còn ${flagged.length - MAX_SHOTS} chuỗi: ${rest}`));
+  }
+}
+
+/* ---------- tải PDF ---------- */
+function loadPdf(file) {
+  return file.arrayBuffer().then((buf) => {
+    const task = pdfjsLib.getDocument({
+      data: new Uint8Array(buf),
+      cMapUrl: PDFJS_BASE + "cmaps/",          // cần cho font tiếng Nhật (CID)
+      cMapPacked: true,
+      standardFontDataUrl: PDFJS_BASE + "standard_fonts/",
+    });
+    task.onPassword = (update, reason) => {
+      const wrong = reason === pdfjsLib.PasswordResponses.INCORRECT_PASSWORD;
+      const pw = window.prompt(
+        (wrong ? "Sai mật khẩu. " : "") + `“${file.name}” có mật khẩu. Nhập mật khẩu:`
+      );
+      if (pw === null) task.destroy();         // bấm Hủy → dừng, không hỏi lại mãi
+      else update(pw);
+    };
+    return task.promise.catch((err) => {
+      if (err && err.name === "PasswordException") throw new Error(`Không mở được “${file.name}” (cần mật khẩu).`);
+      if (err && err.name === "InvalidPDFException") throw new Error(`“${file.name}” không phải PDF hợp lệ hoặc bị hỏng.`);
+      if (err && /destroy/i.test(err.message || "")) throw new Error(`Đã hủy mở “${file.name}”.`);
+      throw err;
+    });
+  });
+}
+
+/* ---------- chạy ---------- */
+$("scan").addEventListener("click", async () => {
+  if (running || !compFile) return;
+  running = true;
+  refreshButton();
+
+  const status = $("status");
+  status.className = "status";
+  status.textContent = "Đang tải PDF…";
+  $("results").hidden = true;
+  $("results").replaceChildren();
+
+  let docC = null, docO = null;
+  try {
+    let rx;
+    try {
+      rx = new RegExp($("pattern").value.trim(), "g");
+    } catch (e) {
+      throw new Error("Mẫu regex không hợp lệ.");
+    }
+    if (!$("pattern").value.trim()) throw new Error("Mẫu regex đang trống.");
+    const minLen = Math.max(0, parseInt($("minlen").value, 10) || 0);
+
+    docC = await loadPdf(compFile);
+    const comp = await scanDoc(docC, rx, minLen, (i, n) => {
+      status.textContent = `Đang quét bản nén — trang ${i}/${n}…`;
+    });
+
+    let orig = null;
+    if (origFile) {
+      status.textContent = "Đang đọc bản gốc…";
+      docO = await loadPdf(origFile);
+      if (docO.numPages !== docC.numPages) {
+        console.warn("Số trang hai bản khác nhau:", docC.numPages, docO.numPages);
+      }
+      orig = await scanDoc(docO, rx, minLen, (i, n) => {
+        status.textContent = `Đang quét bản gốc — trang ${i}/${n}…`;
+      });
+    }
+
+    const flagged = classify(comp, orig);
+    await showResults(docC, docO, comp, flagged, status);
+
+    let msg = flagged.length
+      ? `Xong — ${flagged.length} chuỗi đáng ngờ.`
+      : "Xong — không phát hiện chuỗi bị tách.";
+    if (docO && docO.numPages !== docC.numPages) {
+      msg += ` (Lưu ý: bản gốc ${docO.numPages} trang, bản nén ${docC.numPages} trang — đối chiếu theo số trang có thể sai.)`;
+    }
+    status.textContent = msg;
+  } catch (err) {
+    console.error(err);
+    status.className = "status err";
+    status.textContent = "Lỗi: " + (err && err.message ? err.message : String(err));
+  } finally {
+    if (docC) docC.destroy();
+    if (docO) docO.destroy();
+    running = false;
+    refreshButton();
+  }
+});
+</script>
+</body>
+</html>
